@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/huangzheng2016/udp2faketcp"
 	"net"
 	"testing"
 	"time"
@@ -109,4 +110,12 @@ func Test_udp(t *testing.T) {
 		}
 	}()
 	select {}
+}
+
+func Test_server(T *testing.T) {
+	udp2faketcp.Server("0.0.0.0:3435", "127.0.0.1:3433")
+}
+
+func Test_client(T *testing.T) {
+	udp2faketcp.Client("0.0.0.0:3434", "127.0.0.1:3435")
 }

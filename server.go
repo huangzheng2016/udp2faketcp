@@ -66,7 +66,7 @@ func handleServerConnection(udpConn *net.UDPConn, conn *tcpraw.TCPConn, tcpAddr 
 	defer udpConn.Close()
 	buffer := make([]byte, MAX_PACKET_LEN)
 	for {
-		err := udpConn.SetReadDeadline(time.Now().Add(UDP_TTL))
+		err := udpConn.SetDeadline(time.Now().Add(UDP_TTL))
 		if err != nil {
 			debugLogln("Error setting read deadline:", err)
 			break

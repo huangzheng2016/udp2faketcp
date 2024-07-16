@@ -29,7 +29,7 @@ func debugLogf(format string, args ...interface{}) {
 	}
 }
 
-func ctlInit() {
+func CtlInit() {
 	o := Options{}
 	flag.BoolVar(&o.Help, "h", false, "Print help")
 	flag.BoolVar(&o.Help, "help", false, "Print help")
