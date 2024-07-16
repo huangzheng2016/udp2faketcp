@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 )
 
 var udpConnections sync.Map
@@ -65,6 +66,11 @@ func handleServerConnection(udpConn *net.UDPConn, conn *tcpraw.TCPConn, tcpAddr 
 	defer udpConn.Close()
 	buffer := make([]byte, MAX_PACKET_LEN)
 	for {
+		err := udpConn.SetReadDeadline(time.Now().Add(UDP_TTL))
+		if err != nil {
+			debugLogln("Error setting read deadline:", err)
+			break
+		}
 		length, err := udpConn.Read(buffer)
 		if err != nil {
 			if err != io.EOF {

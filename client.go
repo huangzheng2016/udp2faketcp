@@ -75,6 +75,11 @@ func handleClientConnection(conn *tcpraw.TCPConn, udpConn *net.UDPConn, udpAddr 
 	defer conn.Close()
 	buffer := make([]byte, MAX_PACKET_LEN)
 	for {
+		err := conn.SetReadDeadline(time.Now().Add(UDP_TTL))
+		if err != nil {
+			debugLogln("Error setting read deadline:", err)
+			break
+		}
 		length, _, err := conn.ReadFrom(buffer)
 		if err != nil {
 			if err != io.EOF {
@@ -85,11 +90,6 @@ func handleClientConnection(conn *tcpraw.TCPConn, udpConn *net.UDPConn, udpAddr 
 		_, err = udpConn.WriteToUDP(buffer[:length], udpAddr)
 		if err != nil {
 			debugLogln("Error writing to UDP:", err)
-			break
-		}
-		err = conn.SetDeadline(time.Now().Add(UDP_TTL))
-		if err != nil {
-			debugLogln("Error setting deadline:", err)
 			break
 		}
 	}
