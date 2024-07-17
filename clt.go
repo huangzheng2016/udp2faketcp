@@ -45,8 +45,8 @@ func CtlInit() {
 	flag.StringVar(&o.RemoteAddr, "r", "", "Remote address")
 	flag.Int64Var(&o.TTL, "ttl", 180, "TTL: default 180 (seconds)")
 	flag.Int64Var(&o.TTL, "t", 180, "TTL: default 180 (seconds)")
-	flag.IntVar(&o.MTU, "mtu", 1408, "MTU: default 1408")
-	flag.IntVar(&o.MTU, "m", 1408, "MTU: default 1408")
+	flag.IntVar(&o.MTU, "mtu", 1440, "MTU: default 1440")
+	flag.IntVar(&o.MTU, "m", 1440, "MTU: default 1440")
 	flag.Parse()
 	UDP_TTL = time.Duration(o.TTL) * time.Second
 	MAX_PACKET_LEN = o.MTU

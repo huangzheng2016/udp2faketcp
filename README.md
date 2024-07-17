@@ -14,7 +14,7 @@ Flags:
   -l, --listen [host:port]  Listen address
   -r, --remote [host:port]  Listen address
   -t, --ttl [int]        TTL: default 180 (seconds)
-  -m, --mtu [int]        MTU: default 1408 
+  -m, --mtu [int]        MTU: default 1440 
 ```
 # Example
 ```shell
