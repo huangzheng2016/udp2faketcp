@@ -52,6 +52,7 @@ func Server(localAddr string, remoteAddr string) {
 							continue
 						}
 						udpConnections.Store(tcpAddr.String(), udpConn)
+						val = udpConn
 						udpLock.Unlock()
 						go handleServerConnection(udpConn, conn, tcpAddr)
 					} else {

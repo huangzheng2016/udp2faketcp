@@ -60,6 +60,7 @@ func Client(localAddr string, remoteAddr string) {
 							continue
 						}
 						tcpConnections.Store(addr.String(), tcpConn)
+						val = tcpConn
 						tcpLock.Unlock()
 						go handleClientConnection(tcpConn, udpConn, addr)
 					} else {
