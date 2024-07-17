@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -13,54 +14,64 @@ var udpConnections sync.Map
 var udpLock sync.Mutex
 
 func Server(localAddr string, remoteAddr string) {
-	conn, err := tcpraw.Listen("tcp4", localAddr)
+	conn, err := tcpraw.Listen("tcp", localAddr)
 	if err != nil {
 		log.Println("Error dialing TCP:", err)
 		return
 	}
 	defer conn.Close()
-	for {
-		buffer := make([]byte, MAX_PACKET_LEN)
-		length, tcpAddr, err := conn.ReadFrom(buffer)
-		if err != nil {
-			debugLogln("Error reading from RAWTCP:", err)
-			continue
-		}
+
+	cpuCores := runtime.NumCPU()
+	for i := 0; i < cpuCores; i++ {
 		go func() {
-			debugLogln("Read from RAWTCP:", length, tcpAddr.String(), string(buffer[:length]))
-			if _, exists := udpConnections.Load(tcpAddr.String()); !exists {
-				udpLock.Lock()
-				defer udpLock.Unlock()
-				if _, exists := udpConnections.Load(tcpAddr.String()); !exists {
-					log.Println("New TCP client:", tcpAddr.String())
-					udpAddr, err := net.ResolveUDPAddr("udp4", remoteAddr)
-					if err != nil {
-						debugLogln("Error resolving UDP address:", err)
-						return
-					}
-					udpConn, err := net.DialUDP("udp4", nil, udpAddr)
-					if err != nil {
-						debugLogln("Error dialing TCP:", err)
-						return
-					}
-					udpConnections.Store(tcpAddr.String(), udpConn)
-					go handleServerConnection(udpConn, conn, tcpAddr)
-				}
-			}
-			if val, ok := udpConnections.Load(tcpAddr.String()); ok {
-				tcpConn := val.(*net.UDPConn)
-				_, err = tcpConn.Write(buffer[:length])
+			for {
+				buffer := make([]byte, MAX_PACKET_LEN)
+				length, tcpAddr, err := conn.ReadFrom(buffer)
 				if err != nil {
-					debugLogln("Error writing to TCP:", err)
-					tcpConn.Close()
-					udpConnections.Delete(tcpAddr.String())
-					return
+					debugLogln("Error reading from RAWTCP:", err)
+					continue
 				}
-				debugLogln("Wrote", length, "bytes to", tcpAddr.String())
+				debugLogln("Read from RAWTCP:", length, tcpAddr.String(), string(buffer[:length]))
+				var val any
+				var exists bool
+				if val, exists = udpConnections.Load(tcpAddr.String()); !exists {
+					udpLock.Lock()
+					if val, exists = udpConnections.Load(tcpAddr.String()); !exists {
+						log.Println("New TCP client:", tcpAddr.String())
+						udpAddr, err := net.ResolveUDPAddr("udp", remoteAddr)
+						if err != nil {
+							debugLogln("Error resolving UDP address:", err)
+							udpLock.Unlock()
+							continue
+						}
+						udpConn, err := net.DialUDP("udp", nil, udpAddr)
+						if err != nil {
+							debugLogln("Error dialing TCP:", err)
+							udpLock.Unlock()
+							continue
+						}
+						udpConnections.Store(tcpAddr.String(), udpConn)
+						udpLock.Unlock()
+						go handleServerConnection(udpConn, conn, tcpAddr)
+					} else {
+						udpLock.Unlock()
+					}
+				}
+				if val != nil {
+					tcpConn := val.(*net.UDPConn)
+					_, err = tcpConn.Write(buffer[:length])
+					if err != nil {
+						debugLogln("Error writing to TCP:", err)
+						tcpConn.Close()
+						udpConnections.Delete(tcpAddr.String())
+						continue
+					}
+					debugLogln("Wrote", length, "bytes to", tcpAddr.String())
+				}
 			}
 		}()
-
 	}
+	select {}
 }
 func handleServerConnection(udpConn *net.UDPConn, conn *tcpraw.TCPConn, tcpAddr net.Addr) {
 	defer udpConn.Close()
