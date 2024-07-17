@@ -14,6 +14,13 @@ var udpConnections sync.Map
 var udpLock sync.Mutex
 
 func Server(localAddr string, remoteAddr string) {
+
+	udpAddr, err := net.ResolveUDPAddr("udp", remoteAddr)
+	if err != nil {
+		debugLogln("Error resolving UDP address:", err)
+		return
+	}
+
 	conn, err := tcpraw.Listen("tcp", localAddr)
 	if err != nil {
 		log.Println("Error dialing TCP:", err)
@@ -31,19 +38,13 @@ func Server(localAddr string, remoteAddr string) {
 					debugLogln("Error reading from RAWTCP:", err)
 					continue
 				}
-				debugLogln("Read from RAWTCP:", length, tcpAddr.String(), string(buffer[:length]))
+				debugLogln("Read from RAWTCP:", length, tcpAddr.String())
 				var val any
 				var exists bool
 				if val, exists = udpConnections.Load(tcpAddr.String()); !exists {
 					udpLock.Lock()
 					if val, exists = udpConnections.Load(tcpAddr.String()); !exists {
 						log.Println("New TCP client:", tcpAddr.String())
-						udpAddr, err := net.ResolveUDPAddr("udp", remoteAddr)
-						if err != nil {
-							debugLogln("Error resolving UDP address:", err)
-							udpLock.Unlock()
-							continue
-						}
 						udpConn, err := net.DialUDP("udp", nil, udpAddr)
 						if err != nil {
 							debugLogln("Error dialing TCP:", err)
