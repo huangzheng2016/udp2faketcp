@@ -22,7 +22,8 @@ import (
 // authentication and anti-replay. A handshake payload is the 16-byte
 // session ID shared by all flows of the session. Heartbeats are answered
 // with a pong so each side can measure the per-flow RTT from the echo.
-// Both ends must run the same version, -k and -f.
+// Both ends must run the same version and the same -k. The server adapts
+// to the client's flow count via the session ID, so -f is client-only.
 const (
 	frameData = iota
 	frameHeartbeat

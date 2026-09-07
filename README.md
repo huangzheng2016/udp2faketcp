@@ -17,7 +17,7 @@ Flags:
   -t, --ttl [int]        TTL: default 180 (seconds)
   -m, --mtu [int]        MTU: default 1440
   -b, --sockbuf [int]    Socket buffer size in MB: default 4 (0 = kernel default)
-  -f, --flows [int]      Parallel fake-TCP flows per session: default 4 (1-32)
+  -f, --flows [int]      Parallel fake-TCP flows per session: default 1 (1-32)
   -k, --key [string]     Shared key for HMAC authentication
 ```
 
@@ -33,13 +33,13 @@ HMAC-SHA256 tag (key derived from the passphrase with SHA-256). The server only 
 that completed a handshake frame, so the tunnel is no longer an open relay, and a 4096-bit replay window
 rejects replayed frames. Note: `-k` authenticates packets, it does not encrypt them.
 
-**Both ends must run the same version, the same `-k` and the same `-f`.**
+**Both ends must run the same version and the same `-k`. `-f` only needs to be set on the client; the server groups flows by session ID automatically.**
 
 # Multi-flow aggregation
 
-ISPs and middleboxes often rate-limit a single TCP 4-tuple. With `-f N` (default 4) each session opens N
-parallel fake-TCP connections and stripes datagrams across them round-robin; the receiver restores the
-original order with a reorder buffer before delivery.
+ISPs and middleboxes often rate-limit a single TCP 4-tuple. With `-f N` (default 1, i.e. aggregation off) each
+session opens N parallel fake-TCP connections and stripes datagrams across them round-robin; the receiver
+restores the original order with a reorder buffer before delivery.
 
 - The reorder gap-wait adapts to the inter-flow path skew, estimated from heartbeat RTTs
   (`(srtt + 4*rttvar) * 2.2`, clamped to 5-500ms); the buffer holds up to 1024 datagrams per session.
