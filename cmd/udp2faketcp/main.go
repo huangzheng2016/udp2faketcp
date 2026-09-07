@@ -5,5 +5,5 @@ import (
 )
 
 func main() {
-	udp2faketcp.CtlInit()
+	udp2faketcp.CliInit()
 }
