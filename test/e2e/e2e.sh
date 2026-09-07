@@ -1,11 +1,3 @@
-#!/usr/bin/env bash
-# End-to-end tunnel test in Docker: iperf over udp2faketcp.
-#
-# Usage:
-#   test/e2e/e2e.sh build            build binary + image (run first / after code changes)
-#   test/e2e/e2e.sh basic FLOWS [KEY] [SECS]   throughput without any shaping
-#   test/e2e/e2e.sh limit FLOWS [KEY] [SECS]   per-flow 10mbit shaping (needs FLOWS <= 8)
-#   test/e2e/e2e.sh clean
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -19,20 +11,20 @@ build() {
 	docker build -q -t "$IMG" test/e2e >/dev/null
 }
 
-start_server() { # KEY
+start_server() {
 	docker run -d --name u2f-server --network "$NET" --cap-add NET_ADMIN --cap-add NET_RAW \
 		--sysctl net.core.rmem_max=67108864 --sysctl net.core.wmem_max=67108864 \
 		"$IMG" sh -c "iperf -s -u -p 5201 >/tmp/iperf-server.log 2>&1 & exec udp2faketcp -s -l 0.0.0.0:12345 -r 127.0.0.1:5201 -d $1" >/dev/null
 	SERVER_IP=$(docker inspect -f "{{index .NetworkSettings.Networks \"$NET\" \"IPAddress\"}}" u2f-server)
 }
 
-start_client() { # FLOWS KEY
+start_client() {
 	docker run -d --name u2f-client --network "$NET" --cap-add NET_ADMIN --cap-add NET_RAW \
 		--sysctl net.core.rmem_max=67108864 --sysctl net.core.wmem_max=67108864 \
 		"$IMG" sh -c "exec udp2faketcp -c -l 0.0.0.0:51821 -r $SERVER_IP:12345 -d -f $1 $2" >/dev/null
 }
 
-run_iperf() { # SECS RATE
+run_iperf() {
 	docker exec u2f-client iperf -c 127.0.0.1 -B 127.0.0.1:19999 -u -p 51821 -b "$2" -t "$1" -l 1300 2>&1 | grep -A3 'Server Report' || true
 	echo "--- client tunnel stats ---"
 	{ docker logs u2f-client 2>&1; docker exec u2f-client cat /tmp/tunnel.log 2>/dev/null; } | grep 'session ' | tail -3 || true
@@ -45,9 +37,7 @@ clean() {
 	docker network rm "$NET" >/dev/null 2>&1 || true
 }
 
-setup_limit() { # per-source-port shaping on the client side
-	# htb with explicit burst; each source port gets its own $LIMIT class,
-	# unmatched traffic goes to the unshaped default class
+setup_limit() {
 	docker exec u2f-client sh -c "
 		tc qdisc add dev eth0 root handle 1: htb default 999
 		tc class add dev eth0 parent 1: classid 1:999 htb rate 1000mbit
@@ -59,7 +49,7 @@ setup_limit() { # per-source-port shaping on the client side
 		done"
 }
 
-setup_skew() { # like setup_limit, plus 50ms extra delay on half the ports
+setup_skew() {
 	setup_limit
 	docker exec u2f-client sh -c "
 		i=4
@@ -84,7 +74,6 @@ basic)
 limit)
 	clean
 	docker network create "$NET" >/dev/null
-	# container first, shaping before the tunnel starts dialing
 	docker run -d --name u2f-client --network "$NET" --cap-add NET_ADMIN --cap-add NET_RAW \
 		--sysctl net.core.rmem_max=67108864 --sysctl net.core.wmem_max=67108864 \
 		--sysctl net.ipv4.ip_local_port_range="$PORT_RANGE" \
@@ -112,7 +101,7 @@ clean)
 	clean
 	;;
 *)
-	grep '^#' "$0" | head -8
+	echo "usage: $0 build|basic FLOWS [KEY] [SECS]|limit FLOWS [KEY] [SECS] [RATE]|skew FLOWS [KEY] [SECS] [RATE]|clean"
 	exit 2
 	;;
 esac
