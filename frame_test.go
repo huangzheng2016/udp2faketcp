@@ -33,12 +33,12 @@ func TestFrameWithKey(t *testing.T) {
 func TestFrameTamper(t *testing.T) {
 	key := deriveKey("secret")
 	frame := encodeFrame(nil, key, 1, 1, frameData, []byte("hello"))
-	frame[frameHeadLen] ^= 0xff // flip a payload bit
+	frame[frameHeadLen] ^= 0xff
 	if _, _, _, _, ok := decodeFrame(key, frame); ok {
 		t.Fatal("tampered frame accepted")
 	}
 	frame = encodeFrame(nil, key, 1, 1, frameData, []byte("hello"))
-	frame[1] ^= 0xff // flip a streamSeq bit
+	frame[1] ^= 0xff
 	if _, _, _, _, ok := decodeFrame(key, frame); ok {
 		t.Fatal("frame with tampered streamSeq accepted")
 	}
@@ -51,7 +51,7 @@ func TestFrameTamper(t *testing.T) {
 }
 
 func TestFrameKeyMismatch(t *testing.T) {
-	// a keyed receiver must reject unkeyed frames and vice versa
+
 	frame := encodeFrame(nil, nil, 0, 0, frameData, []byte("hello"))
 	if _, _, _, _, ok := decodeFrame(deriveKey("k"), frame); ok {
 		t.Fatal("unkeyed frame accepted by keyed receiver")
@@ -75,7 +75,7 @@ func TestReplayWindow(t *testing.T) {
 	if w.check(103) {
 		t.Fatal("replayed out-of-order frame accepted")
 	}
-	// jump far enough that every prior seq falls out of the window
+
 	if !w.check(100 + 2*replayWindowBits) {
 		t.Fatal("frame beyond window rejected")
 	}

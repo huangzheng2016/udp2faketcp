@@ -11,7 +11,7 @@ func TestRTTEstimator(t *testing.T) {
 		t.Fatal("timeout without samples should be 0")
 	}
 	r.add(int64(100 * time.Millisecond))
-	if d := r.timeout(); d != 300*time.Millisecond { // srtt + 4*(srtt/2)
+	if d := r.timeout(); d != 300*time.Millisecond {
 		t.Fatalf("first sample: timeout = %v", d)
 	}
 	for i := 0; i < 20; i++ {

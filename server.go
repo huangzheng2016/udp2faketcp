@@ -14,16 +14,15 @@ import (
 
 const maxFlows = maxSessions * 32
 
-var flowByAddr sync.Map  // tcp addr -> *serverFlow
-var sessionByID sync.Map // session id -> *serverSession
+var flowByAddr sync.Map
+var sessionByID sync.Map
 var serverLock sync.Mutex
 var serverSessionCount atomic.Int64
 var serverFlowCount atomic.Int64
 var backendUDPAddr *net.UDPAddr
 
-// serverFlow is one fake-TCP connection of a session, seen from the server.
 type serverFlow struct {
-	conn    *tcpraw.TCPConn // the shared listener
+	conn    *tcpraw.TCPConn
 	tcpAddr net.Addr
 	sess    atomic.Pointer[serverSession]
 	hmacSeq atomic.Uint64
@@ -31,15 +30,13 @@ type serverFlow struct {
 	authed  atomic.Bool
 	dead    atomic.Bool
 	done    chan struct{}
-	echoTS  atomic.Int64 // last heartbeat timestamp received from the client
-	lastRx  atomic.Int64 // last frame received on this flow
+	echoTS  atomic.Int64
+	lastRx  atomic.Int64
 	rtt     rttEstimator
 	tx      atomic.Uint64
 	rx      atomic.Uint64
 }
 
-// serverSession merges all flows of one client session: inbound datagrams
-// pass through the reorder buffer, outbound ones are striped across flows.
 type serverSession struct {
 	id   [handshakeLen]byte
 	conn *tcpraw.TCPConn
@@ -57,7 +54,6 @@ type serverSession struct {
 	closeOnce sync.Once
 }
 
-// send writes a control frame (heartbeat) on this flow.
 func (f *serverFlow) send(typ byte, payload []byte) {
 	frame := encodeFrame(make([]byte, 0, frameHeadLen+len(payload)), AUTH_KEY, f.hmacSeq.Add(1), 0, typ, payload)
 	f.conn.SetWriteDeadline(time.Now().Add(UDP_TTL))
@@ -72,7 +68,7 @@ func (f *serverFlow) die() {
 		return
 	}
 	close(f.done)
-	f.conn.CloseFlow(f.tcpAddr) // sends RST, so the client tears the flow down immediately
+	f.conn.CloseFlow(f.tcpAddr)
 	flowByAddr.CompareAndDelete(f.tcpAddr.String(), f)
 	serverFlowCount.Add(-1)
 	if s := f.sess.Load(); s != nil {
@@ -80,8 +76,6 @@ func (f *serverFlow) die() {
 	}
 }
 
-// watchdog keeps the NAT/conntrack state of this flow alive and declares
-// the flow dead when the client goes silent.
 func (f *serverFlow) watchdog() {
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
@@ -139,12 +133,9 @@ func (s *serverSession) deliver(payloads [][]byte) {
 	}
 }
 
-// handleBackend stripes replies from the backend UDP service across the
-// session's flows. There is deliberately no read deadline: a quiet backend
-// does not mean a dead tunnel. The read unblocks when close() closes udp.
 func (s *serverSession) handleBackend() {
 	budget := payloadBudget()
-	buffer := make([]byte, budget+1) // see client.go for the extra byte
+	buffer := make([]byte, budget+1)
 	frameBuf := make([]byte, 0, MAX_PACKET_LEN)
 	for {
 		length, err := s.udp.Read(buffer)
@@ -161,7 +152,7 @@ func (s *serverSession) handleBackend() {
 		s.lastData.Store(time.Now().UnixNano())
 		f := s.pickFlow()
 		if f == nil {
-			continue // no flow right now; drop, UDP tolerates
+			continue
 		}
 		frame := encodeFrame(frameBuf[:0], AUTH_KEY, f.hmacSeq.Add(1), s.streamSeq.Add(1), frameData, buffer[:length])
 		s.conn.SetWriteDeadline(time.Now().Add(UDP_TTL))
@@ -175,7 +166,6 @@ func (s *serverSession) handleBackend() {
 	s.close()
 }
 
-// maintain reaps idle sessions and dumps per-flow statistics for tuning.
 func (s *serverSession) maintain() {
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
@@ -200,7 +190,6 @@ func (s *serverSession) maintain() {
 	}
 }
 
-// tuneReorder adapts the reorder gap-wait to the worst flow RTT estimate.
 func (s *serverSession) tuneReorder() {
 	var max time.Duration
 	s.flowsMu.RLock()
@@ -211,10 +200,9 @@ func (s *serverSession) tuneReorder() {
 	}
 	s.flowsMu.RUnlock()
 	if max <= 0 {
-		return // no estimate yet, keep the default
+		return
 	}
-	// safety margin: the gap-wait must comfortably exceed the inter-flow
-	// skew, not sit exactly at it (MLVPN uses the same x2.2 factor)
+
 	max = max * 11 / 5
 	if max < reorderMinDelay {
 		max = reorderMinDelay
@@ -260,8 +248,6 @@ func (s *serverSession) close() {
 	})
 }
 
-// attachSession links a freshly handshaked flow to its session, creating
-// the session (and its backend UDP connection) on first sight.
 func attachSession(f *serverFlow, sid [handshakeLen]byte) *serverSession {
 	serverLock.Lock()
 	defer serverLock.Unlock()
@@ -312,7 +298,6 @@ func Server(localAddr string, remoteAddr string) {
 	defer conn.Close()
 	setBuffers(conn)
 
-	// tear down flows whose fake-TCP connection was reset
 	go func() {
 		for addr := range conn.Events() {
 			debugLogln("Connection reset by client:", addr.String())
@@ -341,7 +326,7 @@ func Server(localAddr string, remoteAddr string) {
 				val, exists := flowByAddr.Load(key)
 				if !exists {
 					if typ != frameHandshake {
-						// only handshake frames may create a flow
+
 						debugLogln("Frame before handshake from", key)
 						continue
 					}
@@ -388,7 +373,7 @@ func Server(localAddr string, remoteAddr string) {
 							continue
 						}
 					}
-					// confirm so the client stops retransmitting the handshake
+
 					f.send(frameHeartbeat, buildHeartbeat(&f.echoTS))
 				case frameData:
 					sess := f.sess.Load()
@@ -405,7 +390,7 @@ func Server(localAddr string, remoteAddr string) {
 				case frameHeartbeat:
 					if ts, _, ok := parseHeartbeat(payload); ok {
 						f.echoTS.Store(ts)
-						// answer promptly, see client.go
+
 						f.send(framePong, buildHeartbeat(&f.echoTS))
 					}
 					if sess := f.sess.Load(); sess != nil {

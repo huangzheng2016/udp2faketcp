@@ -41,13 +41,13 @@ func TestReorderLateDrop(t *testing.T) {
 func TestReorderGapSkipOnFull(t *testing.T) {
 	var r reorderBuffer
 	r.push(1, []byte("a"))
-	// gap at 2; the first reorderWindow-1 buffered frames must wait
+
 	for i := 0; i < reorderWindow-1; i++ {
 		if out := r.push(uint64(3+i), []byte("x")); len(out) != 0 {
 			t.Fatalf("push %d should still be buffered, got %v", 3+i, out)
 		}
 	}
-	// filling the window declares the gap lost and drains everything
+
 	out := r.push(uint64(3+reorderWindow-1), []byte("y"))
 	if len(out) != reorderWindow || string(out[len(out)-1]) != "y" {
 		t.Fatalf("full buffer should skip the gap and drain, got %d frames", len(out))
@@ -64,7 +64,7 @@ func TestReorderExpire(t *testing.T) {
 	if out := r.expire(); len(out) != 0 {
 		t.Fatalf("should still wait: %v", out)
 	}
-	// age the buffered entry past maxDelay
+
 	r.mu.Lock()
 	e := r.buf[3]
 	e.ts = time.Now().Add(-2 * reorderMaxDelay)
@@ -84,7 +84,7 @@ func TestReorderBufferedPayloadCopied(t *testing.T) {
 	src := []byte("c")
 	r.push(1, []byte("a"))
 	r.push(3, src)
-	src[0] = 'X' // mutate caller's buffer (simulates read-buffer reuse)
+	src[0] = 'X'
 	out := r.push(2, []byte("b"))
 	if len(out) != 2 || string(out[1]) != "c" {
 		t.Fatalf("buffered payload was not copied: %v", out)

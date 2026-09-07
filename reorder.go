@@ -7,18 +7,10 @@ import (
 )
 
 const (
-	// reorderWindow is the maximum number of out-of-order datagrams one
-	// session buffers before declaring the gap lost. It must cover the
-	// session's bandwidth-delay product: pps x inter-flow skew. 1024
-	// holds ~100Mbps x 80ms or ~40Mbps x 200ms; memory is bounded to
-	// window x MTU per session.
 	reorderWindow = 1024
-	// reorderMaxDelay is the default gap-wait before one is skipped, used
-	// until heartbeat RTT estimates take over. Trades latency for
-	// losslessness. 100ms covers typical ECMP path skew during the first
-	// seconds of a session, before adaptation kicks in.
+
 	reorderMaxDelay = 100 * time.Millisecond
-	// bounds for the adaptive gap-wait derived from flow RTTs
+
 	reorderMinDelay    = 5 * time.Millisecond
 	reorderMaxDelayCap = 500 * time.Millisecond
 )
@@ -28,28 +20,22 @@ type reorderEntry struct {
 	ts      time.Time
 }
 
-// reorderBuffer reassembles datagrams that were striped across multiple
-// flows back into their original order. It is safe for concurrent use:
-// the flows of a session push from different goroutines.
 type reorderBuffer struct {
 	mu       sync.Mutex
 	init     bool
 	expect   uint64
 	buf      map[uint64]reorderEntry
-	ooo      uint64       // datagrams buffered out-of-order
-	late     uint64       // datagrams arrived too late to deliver
-	maxDelay atomic.Int64 // ns; 0 means reorderMaxDelay
+	ooo      uint64
+	late     uint64
+	maxDelay atomic.Int64
 }
 
-// stats returns tuning counters (out-of-order buffered, arrived too late).
 func (r *reorderBuffer) stats() (ooo, late uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.ooo, r.late
 }
 
-// setMaxDelay tunes how long a buffered datagram may wait for a gap to
-// fill. Sessions update it from heartbeat RTT estimates.
 func (r *reorderBuffer) setMaxDelay(d time.Duration) {
 	r.maxDelay.Store(int64(d))
 }
@@ -61,8 +47,6 @@ func (r *reorderBuffer) delayBudget() time.Duration {
 	return reorderMaxDelay
 }
 
-// push feeds one datagram and returns everything that became deliverable,
-// in order. The payload is copied only when it has to be buffered.
 func (r *reorderBuffer) push(seq uint64, payload []byte) [][]byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -72,7 +56,7 @@ func (r *reorderBuffer) push(seq uint64, payload []byte) [][]byte {
 	}
 	if seq < r.expect {
 		r.late++
-		return nil // too late, counted as lost already
+		return nil
 	}
 	var out [][]byte
 	if seq == r.expect {
@@ -87,9 +71,6 @@ func (r *reorderBuffer) push(seq uint64, payload []byte) [][]byte {
 	return append(out, r.drainLocked()...)
 }
 
-// expire skips gaps whose successors have waited longer than reorderMaxDelay.
-// Call it when traffic may be stalled (e.g. on heartbeat), so the last
-// datagrams of a burst are not held back forever.
 func (r *reorderBuffer) expire() [][]byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -99,8 +80,6 @@ func (r *reorderBuffer) expire() [][]byte {
 	return r.drainLocked()
 }
 
-// drainLocked delivers buffered datagrams that follow expect directly, then
-// skips gaps when the buffer is full or the oldest entry has gone stale.
 func (r *reorderBuffer) drainLocked() [][]byte {
 	var out [][]byte
 	for len(r.buf) > 0 {
@@ -119,9 +98,9 @@ func (r *reorderBuffer) drainLocked() [][]byte {
 			}
 		}
 		if len(r.buf) < reorderWindow && time.Since(minTS) < r.delayBudget() {
-			break // give the gap a chance to fill
+			break
 		}
-		r.expect = minSeq // declare the gap lost
+		r.expect = minSeq
 	}
 	return out
 }

@@ -5,12 +5,9 @@ import (
 	"time"
 )
 
-// rttEstimator tracks the round-trip time of a flow with RFC 6298 style
-// smoothing. Samples come from heartbeat echoes, so no clock sync between
-// the peers is needed.
 type rttEstimator struct {
-	srtt   atomic.Int64 // ns
-	rttvar atomic.Int64 // ns
+	srtt   atomic.Int64
+	rttvar atomic.Int64
 }
 
 func (r *rttEstimator) add(sample int64) {
@@ -35,7 +32,6 @@ func (r *rttEstimator) add(sample int64) {
 	}
 }
 
-// timeout returns srtt + 4*rttvar, or 0 when no estimate exists yet.
 func (r *rttEstimator) timeout() time.Duration {
 	s := r.srtt.Load()
 	if s == 0 {

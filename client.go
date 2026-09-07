@@ -16,8 +16,7 @@ import (
 
 const (
 	heartbeatInterval = time.Second
-	// deadTimeout is how long a flow may be silent (no frames, not even
-	// heartbeats) before it is declared dead and replaced.
+
 	deadTimeout   = 5 * heartbeatInterval
 	maxSessions   = 1024
 	redialBackoff = 5 * time.Second
@@ -25,11 +24,10 @@ const (
 
 var errSessionClosed = errors.New("session closed")
 
-var udpSessions sync.Map // udp source addr -> *clientSession
+var udpSessions sync.Map
 var sessionLock sync.Mutex
 var sessionCount atomic.Int64
 
-// clientFlow is one fake-TCP connection of a session.
 type clientFlow struct {
 	sess     *clientSession
 	conn     *tcpraw.TCPConn
@@ -38,15 +36,12 @@ type clientFlow struct {
 	gotReply atomic.Bool
 	dead     atomic.Bool
 	done     chan struct{}
-	echoTS   atomic.Int64 // last heartbeat timestamp received from the server
+	echoTS   atomic.Int64
 	rtt      rttEstimator
 	tx       atomic.Uint64
 	rx       atomic.Uint64
 }
 
-// clientSession groups the flows carrying datagrams of one UDP source.
-// Outgoing datagrams are striped across the flows with a session-level
-// sequence number; incoming ones pass through the reorder buffer.
 type clientSession struct {
 	id      [handshakeLen]byte
 	remote  string
@@ -66,7 +61,6 @@ type clientSession struct {
 	closeOnce sync.Once
 }
 
-// send writes a control frame (handshake/heartbeat) on this flow.
 func (f *clientFlow) send(typ byte, payload []byte) {
 	frame := encodeFrame(make([]byte, 0, frameHeadLen+len(payload)), AUTH_KEY, f.hmacSeq.Add(1), 0, typ, payload)
 	f.conn.SetWriteDeadline(time.Now().Add(UDP_TTL))
@@ -81,11 +75,10 @@ func (f *clientFlow) die() {
 		return
 	}
 	close(f.done)
-	f.conn.Close() // sends RST, so the server tears the flow down immediately
+	f.conn.Close()
 	f.sess.removeFlow(f)
 }
 
-// handleRemote forwards frames arriving on this flow back to the UDP client.
 func (f *clientFlow) handleRemote() {
 	buffer := make([]byte, MAX_PACKET_LEN)
 	for {
@@ -115,11 +108,10 @@ func (f *clientFlow) handleRemote() {
 		case frameHeartbeat:
 			if ts, _, ok := parseHeartbeat(payload); ok {
 				f.echoTS.Store(ts)
-				// answer promptly so the peer's RTT estimate is not
-				// quantized by the heartbeat period
+
 				f.send(framePong, buildHeartbeat(&f.echoTS))
 			}
-			// nudge the reorder buffer so a stalled tail is not held back
+
 			f.sess.deliver(f.sess.reorder.expire())
 		case framePong:
 			if _, echo, ok := parseHeartbeat(payload); ok && echo > 0 {
@@ -132,8 +124,6 @@ func (f *clientFlow) handleRemote() {
 	f.die()
 }
 
-// watchdog keeps the flow alive with heartbeats and retransmits the
-// handshake until the server confirms it.
 func (f *clientFlow) watchdog() {
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
@@ -167,8 +157,6 @@ func (s *clientSession) deliver(payloads [][]byte) {
 	}
 }
 
-// pickFlow round-robins over the flows, preferring ones whose handshake
-// the server has already confirmed.
 func (s *clientSession) pickFlow() *clientFlow {
 	s.flowsMu.RLock()
 	defer s.flowsMu.RUnlock()
@@ -189,7 +177,6 @@ func (s *clientSession) pickFlow() *clientFlow {
 	return first
 }
 
-// removeFlow drops f from the flow list (copy-on-write, senders hold RLock).
 func (s *clientSession) removeFlow(f *clientFlow) {
 	s.flowsMu.Lock()
 	flows := make([]*clientFlow, 0, len(s.flows))
@@ -229,9 +216,6 @@ func (s *clientSession) addFlow() error {
 	return nil
 }
 
-// fillFlows dials flows until the session reaches FLOWS, with backoff on
-// failure. Runs once at session creation so all flows come up at once;
-// maintain() only replaces flows that die later.
 func (s *clientSession) fillFlows() {
 	for {
 		s.flowsMu.RLock()
@@ -254,8 +238,6 @@ func (s *clientSession) fillFlows() {
 	}
 }
 
-// maintain keeps the flow count at FLOWS, reaps idle sessions and dumps
-// per-flow statistics for tuning.
 func (s *clientSession) maintain() {
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
@@ -290,7 +272,6 @@ func (s *clientSession) maintain() {
 	}
 }
 
-// tuneReorder adapts the reorder gap-wait to the worst flow RTT estimate.
 func (s *clientSession) tuneReorder() {
 	var max time.Duration
 	s.flowsMu.RLock()
@@ -301,10 +282,9 @@ func (s *clientSession) tuneReorder() {
 	}
 	s.flowsMu.RUnlock()
 	if max <= 0 {
-		return // no estimate yet, keep the default
+		return
 	}
-	// safety margin: the gap-wait must comfortably exceed the inter-flow
-	// skew, not sit exactly at it (MLVPN uses the same x2.2 factor)
+
 	max = max * 11 / 5
 	if max < reorderMinDelay {
 		max = reorderMinDelay
@@ -372,8 +352,7 @@ func Client(localAddr string, remoteAddr string) {
 	cpuCores := runtime.NumCPU()
 	for i := 0; i < cpuCores; i++ {
 		go func() {
-			// one extra byte so truncated datagrams can be told apart
-			// from ones that exactly fill the budget
+
 			buffer := make([]byte, budget+1)
 			frameBuf := make([]byte, 0, MAX_PACKET_LEN)
 			for {
@@ -411,7 +390,7 @@ func Client(localAddr string, remoteAddr string) {
 						val = sess
 						sessionLock.Unlock()
 						go sess.maintain()
-						// the first flow comes up inline, the rest concurrently
+
 						if err := sess.addFlow(); err != nil {
 							debugLogln("Error dialing TCP:", err)
 						}
@@ -424,7 +403,7 @@ func Client(localAddr string, remoteAddr string) {
 				sess.lastData.Store(time.Now().UnixNano())
 				f := sess.pickFlow()
 				if f == nil {
-					continue // flows are (re)establishing; drop, UDP tolerates
+					continue
 				}
 				frame := encodeFrame(frameBuf[:0], AUTH_KEY, f.hmacSeq.Add(1), sess.streamSeq.Add(1), frameData, buffer[:length])
 				f.conn.SetWriteDeadline(time.Now().Add(UDP_TTL))
