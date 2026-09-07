@@ -18,6 +18,7 @@ type Options struct {
 	TTL        int64
 	MTU        int
 	SockBuf    int
+	Flows      int
 	Key        string
 }
 
@@ -71,6 +72,8 @@ func CliInit() {
 	flag.IntVar(&o.MTU, "m", 1440, "MTU: default 1440")
 	flag.IntVar(&o.SockBuf, "sockbuf", 4, "Socket buffer size in MB (0 = kernel default)")
 	flag.IntVar(&o.SockBuf, "b", 4, "Socket buffer size in MB (0 = kernel default)")
+	flag.IntVar(&o.Flows, "flows", 4, "Parallel fake-TCP flows per session")
+	flag.IntVar(&o.Flows, "f", 4, "Parallel fake-TCP flows per session")
 	flag.StringVar(&o.Key, "key", "", "Shared key for HMAC authentication")
 	flag.StringVar(&o.Key, "k", "", "Shared key for HMAC authentication")
 	flag.Parse()
@@ -92,10 +95,14 @@ func CliInit() {
 	if o.SockBuf < 0 || o.SockBuf > 256 {
 		log.Fatalf("Invalid socket buffer size: %d MB", o.SockBuf)
 	}
+	if o.Flows < 1 || o.Flows > 32 {
+		log.Fatalf("Invalid flows: %d (must be 1-32)", o.Flows)
+	}
 
 	UDP_TTL = time.Duration(o.TTL) * time.Second
 	MAX_PACKET_LEN = o.MTU
 	SOCK_BUF = o.SockBuf << 20
+	FLOWS = o.Flows
 	DEBUG = o.Debug
 	if o.Key != "" {
 		AUTH_KEY = deriveKey(o.Key)
